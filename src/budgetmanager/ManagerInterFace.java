@@ -10,13 +10,19 @@ import java.awt.Toolkit;
 import java.awt.event.WindowEvent;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLEncoder;
 
 /**
  *
  * @author Wout
  */
 public class ManagerInterFace extends javax.swing.JFrame {
+    private static final String BASE_URL_VARIABLE = "BUDGET_MANAGER_EXCHANGE_RATE_BASE_URL";
+    private static final String API_KEY_VARIABLE = "BUDGET_MANAGER_EXCHANGE_RATE_API_KEY";
+    private static final String EXAMPLE_API_KEY = "not-a-real-api-key";
+
     private String convjs;
 
     /**
@@ -736,6 +742,38 @@ public class ManagerInterFace extends javax.swing.JFrame {
         });
     }
     
+    private static String requiredEnvironmentVariable(String name) {
+        String value = System.getenv(name);
+        if (value == null || value.trim().isEmpty()) {
+            throw new IllegalStateException("Missing required environment variable: " + name);
+        }
+        return value.trim();
+    }
+
+    private static String buildExchangeRateUrl() {
+        String baseUrlValue = requiredEnvironmentVariable(BASE_URL_VARIABLE);
+        String apiKey = requiredEnvironmentVariable(API_KEY_VARIABLE);
+        if (EXAMPLE_API_KEY.equals(apiKey)) {
+            throw new IllegalStateException("Replace the example value for environment variable: " + API_KEY_VARIABLE);
+        }
+
+        try {
+            URL baseUrl = new URL(baseUrlValue);
+            if (!"https".equalsIgnoreCase(baseUrl.getProtocol())) {
+                throw new IllegalStateException("Exchange-rate base URL must use HTTPS.");
+            }
+            if (baseUrl.getUserInfo() != null || baseUrl.getQuery() != null || baseUrl.getRef() != null) {
+                throw new IllegalStateException("Exchange-rate base URL must not contain credentials, a query, or a fragment.");
+            }
+
+            return baseUrl.toExternalForm() + "?app_id=" + URLEncoder.encode(apiKey, "UTF-8");
+        } catch (MalformedURLException e) {
+            throw new IllegalStateException("Exchange-rate base URL is invalid.");
+        } catch (java.io.UnsupportedEncodingException e) {
+            throw new IllegalStateException("UTF-8 encoding is unavailable.");
+        }
+    }
+
     private static String readUrl(String urlString) throws Exception {
     BufferedReader reader = null;
     try {
@@ -756,11 +794,13 @@ public class ManagerInterFace extends javax.swing.JFrame {
     
     public double getConv(String cur, boolean renew)
     {
+        String exchangeRateUrl = renew ? buildExchangeRateUrl() : null;
+
         try
         {
             if(renew)
             {
-                convjs = readUrl("http://openexchangerates.org/api/latest.json?app_id=3c1c4ec3911e43e0b459aecde6be730a");
+                convjs = readUrl(exchangeRateUrl);
             }
             String[] v = convjs.split(",");
             for(int i=0; i<v.length; i++)
@@ -773,7 +813,7 @@ public class ManagerInterFace extends javax.swing.JFrame {
             return 1.0;
         }catch(Exception e)
         {
-            e.printStackTrace();
+            System.err.println("Unable to refresh or parse exchange-rate data.");
             return 1.0;
         }
     }
